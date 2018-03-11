@@ -33,21 +33,24 @@ ls -l
 geany alleKommandos.txt &     # Wenn es nicht schon offen ist :-)
 
 # Folie 25
-sudo apt install nginx
-chromium-browser http://localhost
-sudo geany /var/www/html/index.nginx-debian.html
+sudo apt install -y nginx
+chromium-browser http://localhost &
+sudo geany /var/www/html/index.nginx-debian.html &
 
 # Folie 27
 # Achtung, nach der folgenden Zeile erst mal die Installation abwarten!
 sudo apt install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common
+# Achtung, hier erst mal die Installation abwarten!
 
 curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
 echo "deb [arch=armhf] https://download.docker.com/linux/debian \
      $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list
 sudo apt update
 sudo apt install -y docker-ce
+# Achtung, auch hier erst mal die Installation abwarten!
 sudo usermod -aG docker pi
 
+# Logout und wieder login, sonst greift das usermod noch nicht!
 sudo docker run armhf/hello-world
 
 # Folie 32
@@ -159,17 +162,21 @@ docker images
 #
 # NUR FÜR DIE INTERNE VORBEREITUNG !!!!
 #
-docker login
-pushd ~/ziai12/nginx2
-docker build -t frickler24/mandel:1.0.1 -t frickler24/mandel:latest -t mandel:1.0.1 -f Dockerfile.nginx .
-docker build -t frickler24/fpmimage:1.0.1 -t frickler24/fpmimage:latest -t fpmimage:1.0.1 -f Dockerfile.phpfpm .
-docker push frickler24/mandel:1.0.1
-docker push frickler24/mandel:latest
-docker push frickler24/fpmimage:1.0.1
-docker push frickler24/fpmimage:latest
-cd ../haproxy
-zip -0 -j -v -D ../phpfiles:1.0.1.zip *php index.html
-popd
+function bereiteDockerImagesVor {
+	docker login
+	pushd ~/ziai12/nginx2
+	docker build -t frickler24/mandel:1.0.1 -t frickler24/mandel:latest -t mandel:1.0.1 -f Dockerfile.nginx .
+	docker build -t frickler24/fpmimage:1.0.1 -t frickler24/fpmimage:latest -t fpmimage:1.0.1 -f Dockerfile.phpfpm .
+	docker push frickler24/mandel:1.0.1
+	docker push frickler24/mandel:latest
+	docker push frickler24/fpmimage:1.0.1
+	docker push frickler24/fpmimage:latest
+	cd ../haproxy
+	zip -0 -j -v -D ../phpfiles:1.0.1.zip *php index.html
+	popd
+}
+# Hiermit könnte man die Funktion aufrufen:
+# bereiteDockerImagesVor
 #
 # Ende Vorbereitungsblock
 ################################################################################################################
@@ -199,8 +206,8 @@ curl -s http://localhost:8080/test.php | grep -C 2 "You run"
 
 # Folie 78
 
-ip addr show wlan0
-docker swarm init --advertise-addr wlan0            # ACHTUNG
+ip addr show eth0
+docker swarm init --advertise-addr $(ip -4 addr show eth0 | grep "^....inet" | sed "s/.*inet //" | sed "s/\/.*$//")
 docker swarm join-token manager
 cd ~/ziai12; ./addnas
 ls -lL nas
@@ -209,17 +216,22 @@ ls -lL nas
 docker node ls
 docker node ls -q
 docker swarm join-token manager
+# Die beiden nachfolgenden Statements funktionieren nur, wenn sich noch niemand am Schwarm beteiligt hat.
+# Deshalb werden sie hier zwar für den lokalen Test genommen, aber die Schleife unten macht es richtig.
 docker swarm join-token manager > nas/manager-$(docker node ls -q)
 docker swarm join-token worker > nas/worker-$(docker node ls -q)
-
+# In dem neuen NAS werden die Berechtigungen ordentlich gehandhabt - deshalb setzen wir die Datei auf Ausführbar für alle.
+chmod 755 nas/*-$(docker node ls -q) # chmod 755 = lesen + schreiben + ausführen für den Eigentümer; lesen + ausführen für alle anderen
 cat nas/w*
 cat nas/m*
 
-for typ in worker manager ; do (echo -n "# " ; docker swarm join-token $typ) > nas/$typ-$(docker node ls -q) ; done         # Noch mal checken am NAS
+for typ in worker manager ; do (echo -n "# " ; docker swarm join-token $typ) > nas/$typ-$(docker node inspect self |grep '"ID":' | cut -d'"' -f 4) ; chmod 755 nas/$typ-$(docker node inspect self |grep '"ID":' | cut -d'"' -f 4) ; done
 
 # Folie 89
 
-ACHTUNG Image size 416MB !
+###############################################
+# ACHTUNG Image size 416MB für den Visualizer !
+###############################################
 
 # Wenn ein beliebiger Manager den Visualizer starten können soll
 docker service create \
@@ -239,7 +251,7 @@ docker service create \
 --mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
 alexellis2/visualizer-arm
 
-chromium-browser http://localhost:8080/test.php 2>/dev/null &
+chromium-browser http://172.17.0.1:8081 2>/dev/null &
 docker service ls
 docker service ps viz
 
@@ -263,8 +275,9 @@ docker service create \
 --detach=false \
 mandel
 
-# Evtl. hier noch die Anzhal der nginxe skalieren; Sollten so viele sein, dass nachher einer vom Knoten Lutz verdrängt werden muss
-docker service scale 
+# Evtl. hier noch die Anzahl der nginxe skalieren; Sollten so viele sein, dass nachher einer vom Knoten Lutz verdrängt werden muss
+docker service scale mbp=8
+docker service scale mbp=4
 
 chromium-browser http://172.17.0.1:8080/brot.php 2>/dev/null &
 
@@ -281,10 +294,16 @@ docker service ps phpfpm
 docker service scale mbr=12
 
 # Folie 103
+# Wirklich benmötigt wird nur das Update von phpfpm, denn nur dafür gehen wir nachher auf die 1.0.3
 docker service update --update-delay 1s --update-parallelism 2 --image frickler24/fpmimage:1.0.1 --detach=true phpfpm
+
+# Also das hier optional - wenn man bspw. mit anderen Parametern spielen möchte
 docker service update --update-delay 1s --update-parallelism 2 --image frickler24/mandel:1.0.1 --detach=true mbr
 
+# Und jetzt die Überraschungsoftware
 docker service update --update-delay 1m --update-parallelism 1 --image frickler24/fpmimage:1.0.3 --detach=false phpfpm
+
+# und wieder zurück
 docker service update --rollback phpfpm
 
 # Nur wenn's nicht mit dem Rollback klappt, neu laden des Service

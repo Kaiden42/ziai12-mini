@@ -10,6 +10,5 @@ all:
 		../ziai12/preload \
 		../ziai12/README.md \
 		../ziai12/.gitignore \
-		../ziai12/karte.sh \
 		.
 

@@ -1,9 +1,0 @@
-#!/bin/bash
-
-sudo umount /home/pi/nas > /dev/null 2>&1
-rm -f /home/pi/ziai12/nas
-mkdir -p /home/pi/nas
-sudo mount -t cifs //lutz/ZIAI12 /home/pi/nas -o user=ziai12,pass=supergeheimesPasswort,domain=,,uid=1000,gid=1000
-# sudo chmod 755 /home/pi/nas # Setzen der Rechte geht bei Raspi-Samba nicht
-mkdir -p /home/pi/nas/ziai12
-ln -s /home/pi/nas/ziai12 /home/pi/ziai12/nas
